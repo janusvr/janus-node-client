@@ -29,11 +29,13 @@ function JanusClient(opts) {
     }
     
     this._conn.on("connected", () => { this.emit("connected"); });
-    this._conn.on("data", (data) => { this.emit("data", data); });
+    this._conn.on("data", this.onData.bind(this));
     this._conn.on("end", () => { this.emit("end"); });
+    this.queue = "";
 }
 
 util.inherits(JanusClient, EventEmitter);
+
 
 JanusClient.prototype.connect = function() {
     this._conn.connect();
@@ -45,11 +47,24 @@ JanusClient.prototype.disconnect = function() {
     this.destroyed = true;
 }
 
+JanusClient.prototype.onData = function(data) {
+    this.queue += data.toString();
+    if (this.queue.slice(-2) === "\r\n") {
+        var messages = this.queue.split("\r\n")
+        messages.splice(-1)
+        messages = messages.map(JSON.parse);
+        for (var i = 0; i < messages.length; i++)
+            this.emit("data", messages[i]);
+        this.queue = "";
+    }
+    
+};
+
 JanusClient.prototype.send = function(msgData) {
     this._conn.send(msgData);
 }
 
-JanusClient.prototype.sendLogon = function() {
+JanusClient.prototype.sendLogon = function(cb) {
     if (!this._conn) throw new Error('no connection available');
     var msgData = {
         'method': 'logon',
@@ -126,7 +141,7 @@ TcpClient.prototype.connect = function() {
             host: this._host }, 
             () => { this.emit('connected'); });
     this._socket.on('data', (data) => {
-        this.emit('data', JSON.parse(data));
+        this.emit('data', data);
     });
     this._socket.on('end', (data) => {
         this.emit('end');
@@ -161,7 +176,7 @@ WsClient.prototype.connect = function() {
         this._socket = conn;
         this.emit('connected');
         this._socket.on('message', (data) => {
-            this.emit('data', JSON.parse(data.utf8Data));
+            this.emit('data', data.utf8Data);
         });
         this._socket.on('close', (data) => {
             this.emit('end');
